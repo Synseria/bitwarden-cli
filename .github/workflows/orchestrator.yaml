@@ -57,7 +57,7 @@ jobs:
   test-dev:
     needs: check
     if: needs.check.outputs.update_needed == 'true'
-    uses: ./.github/workflows/ci-cd.yml
+    uses: ./.github/workflows/ci-cd.yaml
     with:
       version: ${{ needs.check.outputs.version }}
       dry_run: true # TRUE = On teste seulement (build docker dev)
@@ -95,7 +95,7 @@ jobs:
   # ÉTAPE 4 : RELEASE PROD (Appel CI-CD en mode Prod)
   release-prod:
     needs: [check, merge]
-    uses: ./.github/workflows/ci-cd.yml
+    uses: ./.github/workflows/ci-cd.yaml
     with:
       version: ${{ needs.check.outputs.version }}
       dry_run: false # FALSE = C'est la prod (build latest + release github)
