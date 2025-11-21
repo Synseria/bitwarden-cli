@@ -1,41 +1,40 @@
-## Étape 1 : Utilisation d'une image Alpine légère pour télécharger le binaire Bitwarden CLI
-FROM alpine:latest AS downloader
+# Étape 1 : Utilisation de Node.js LTS sur Alpine
+FROM node:24-alpine
 
-## Version de Bitwarden CLI à utiliser (modifiable lors du build)
-ARG BW_VERSION=
+# Déclaration de la version (Obligatoire pour l'utiliser après)
+ARG BW_VERSION
 
-## Installation des dépendances, téléchargement et vérification du binaire Bitwarden CLI
-RUN apk update --no-cache \
- && apk add --no-cache curl jq \
-    # Télécharge le binaire Bitwarden CLI
- && curl -sLo bw.zip "https://github.com/bitwarden/clients/releases/download/cli-v${BW_VERSION}/bw-oss-linux-${BW_VERSION}.zip" \
-    # Récupère le hash SHA256 officiel depuis l'API GitHub et prépare le fichier de somme
- && echo $(\
-    curl -sL "https://api.github.com/repos/bitwarden/clients/releases/tags/cli-v${BW_VERSION}" | \
-    jq -r ".assets[] | select(.name == \"bw-oss-linux-${BW_VERSION}.zip\") | .digest" | \
-    cut -f2 -d:) bw.zip > sum.txt \
-    # Vérifie l'intégrité du binaire téléchargé
- && sha256sum -sc sum.txt \
-    # Décompresse le binaire
- && unzip bw.zip
+# 2. Installation de Bitwarden CLI via NPM
+RUN npm install -g @bitwarden/cli@${BW_VERSION}
 
-## Étape 2 : Utilisation d'une image Debian pour l'exécution finale
-FROM debian:sid
+# 3. VÉRIFICATION DE L'INSTALLATION
+RUN echo "🔍 Vérification de l'installation..." \
+    && INSTALLED_VERSION=$(bw --version) \
+    && echo "Version installée : $INSTALLED_VERSION" \
+    && echo "Version demandée  : $BW_VERSION" \
+    && bw --version > /dev/null \
+    && echo "Bitwarden CLI fonctionne correctement."
 
-## Copie du binaire Bitwarden CLI depuis l'étape précédente
-COPY --from=downloader bw /usr/local/bin/
+# 4. Création utilisateur sécurisé
+RUN adduser -D -u 1000 bwuser
 
-## Utilisation d'un utilisateur non-root pour plus de sécurité
-USER 1000
+# 5. Gestion du script d'entrée
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh \
+    && chown bwuser:bwuser /entrypoint.sh
 
-## Définition du répertoire de travail
+# 6. Configuration de l'environnement
 WORKDIR /bw
+RUN chown bwuser:bwuser /bw
 
-## Définition de la variable d'environnement HOME
+# Définition de la variable d'environnement HOME
 ENV HOME=/bw
+ENV BW_HOST="https://api.bitwarden.com"
+ENV TZ="Europe/Paris"
+ENV BW_PORT="8087"
 
-## Copie du script d'entrée dans l'image
-COPY entrypoint.sh /
+# Passage en utilisateur non-root
+USER bwuser
 
-## Commande d'entrée du conteneur
+# Commande d'entrée
 ENTRYPOINT ["/entrypoint.sh"]

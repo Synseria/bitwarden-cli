@@ -1,36 +1,85 @@
 #!/bin/bash
-
-# Vérification des variables d'environnement
 set -e
 
-# Connexion au serveur Bitwarden
-bw config server "${BW_HOST}"
+# ==============================================================================
+# 1. VÉRIFICATION DES VARIABLES D'ENVIRONNEMENT
+# ==============================================================================
 
-# Connexion avec la clé API si les variables sont définies
-if [ -n "$BW_CLIENTID" ] && [ -n "$BW_CLIENTSECRET" ]; then
-    # Log
-	echo "Connexion avec la clé API"
+# Fonction pour vérifier la présence d'une variable
+check_required_env() {
+	# Vérifie si la variable est définie et non vide
+    local var_name="$1"
+	# Vérification indirecte de la variable
+    if [ -z "${!var_name}" ]; then
+		# Message d'erreur
+        echo "Erreur critique : La variable d'environnement '$var_name' est manquante ou vide."
 
-	# Connexion avec la clé API
-	bw login --apikey --raw
-
-	# Déverrouillage du coffre-fort
-	BW_SESSION=$(bw unlock --passwordenv BW_PASSWORD --raw)
-	export BW_SESSION
-else
-	# Connexion avec nom d'utilisateur et mot de passe
-	echo "Connexion avec nom d'utilisateur et mot de passe"
-
-	# Connexion avec nom d'utilisateur et mot de passe
-	BW_SESSION=$(bw login "${BW_USER}" --passwordenv BW_PASSWORD --raw)
-	export BW_SESSION
-fi
-
-# Vérification du déverrouillage du coffre-fort
-bw unlock --check
+		# Sortie avec code d'erreur
+        exit 1
+    fi
+}
 
 # Log
-echo "Lancement de bw server sur le port 8087"
+echo "Vérification de la configuration..."
 
-# Lancement du serveur Bitwarden
-bw serve --hostname 0.0.0.0 #--disable-origin-protection
+# Liste des variables obligatoires
+check_required_env "BW_HOST"
+check_required_env "BW_CLIENTID"
+check_required_env "BW_CLIENTSECRET"
+check_required_env "BW_PASSWORD"
+
+# Log
+echo "Configuration validée."
+
+# ==============================================================================
+# 2. CONFIGURATION ET CONNEXION
+# ==============================================================================
+
+# Configuration du serveur
+echo "Configuration du serveur : ${BW_HOST}"
+
+# Application de la configuration
+bw config server "${BW_HOST}"
+
+# Log
+echo "Authentification via API Key..."
+
+# Connexion via API Key
+bw login --apikey
+
+# Log
+echo "Déverrouillage du coffre..."
+
+# Déverrouillage du coffre
+export BW_SESSION=$(bw unlock --passwordenv BW_PASSWORD --raw)
+
+# Vérification de la session
+if [ -z "$BW_SESSION" ]; then
+	# Log
+    echo "❌ Erreur : Impossible de récupérer la session (Mot de passe incorrect ?)"
+
+	# Sortie avec code d'erreur
+    exit 1
+fi
+
+# Vérification finale
+if bw unlock --check > /dev/null 2>&1; then
+	# Log
+    echo "Coffre déverrouillé avec succès."
+else
+	# Log
+    echo "Erreur : Le coffre semble toujours verrouillé."
+
+	# Sortie avec code d'erreur
+    exit 1
+fi
+
+# ==============================================================================
+# 3. LANCEMENT DU SERVEUR
+# ==============================================================================
+
+# Log
+echo "Lancement du serveur Bitwarden CLI sur le port ${BW_PORT:-8087}"
+
+# Exécution du serveur
+exec bw serve --hostname 0.0.0.0 --port ${BW_PORT:-8087}
