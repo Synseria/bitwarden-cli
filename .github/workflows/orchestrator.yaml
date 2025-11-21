@@ -1,0 +1,89 @@
+name: Orchestrator
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # Tous les jours à 6h
+  workflow_dispatch:    # Pour tester manuellement
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  # ÉTAPE 1 : DÉTECTION
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      update_needed: ${{ steps.check.outputs.update_needed }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6 
+        # Note: PAS de "token:" ici, c'est ça qui causait ton erreur !
+
+      - name: Check Upstream
+        id: check
+        run: |
+          LATEST=$(curl -s https://api.github.com/repos/bitwarden/clients/releases | jq -r '[.[] | select(.tag_name | startswith("cli-v")) | .tag_name] | first' | sed 's/^cli-v//')
+          CURRENT=$(cat VERSION 2>/dev/null || echo "0.0.0")
+          
+          if [ "$LATEST" != "$CURRENT" ]; then
+            echo "update_needed=true" >> $GITHUB_OUTPUT
+            echo "version=$LATEST" >> $GITHUB_OUTPUT
+            echo "🚀 Nouvelle version : $LATEST"
+          else
+            echo "update_needed=false" >> $GITHUB_OUTPUT
+            echo "✅ À jour."
+          fi
+
+  # ÉTAPE 2 : TEST SUR BRANCHE VIRTUELLE (Appel CI-CD en mode Dry Run)
+  test-dev:
+    needs: check
+    if: needs.check.outputs.update_needed == 'true'
+    # 👇 C'est ici qu'il appelle l'autre fichier
+    uses: ./.github/workflows/ci-cd.yaml
+    with:
+      version: ${{ needs.check.outputs.version }}
+      dry_run: true # TRUE = On teste seulement (build docker dev)
+    secrets: inherit
+
+  # ÉTAPE 3 : MERGE (Si le test a réussi)
+  merge:
+    needs: [check, test-dev]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Commit & Merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.check.outputs.version }}"
+          BRANCH="auto-$VERSION"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # On prépare le terrain
+          git checkout -b "$BRANCH"
+          echo "$VERSION" > VERSION
+          git add VERSION
+          git commit -m "chore: update to $VERSION"
+          git push origin "$BRANCH" --force
+          
+          # On crée la PR et on la valide DANS LA FOULÉE
+          # (On a le droit car on a testé juste avant à l'étape 2)
+          PR=$(gh pr create --title "Bump $VERSION" --body "Auto-validated." --base master --head "$BRANCH")
+          gh pr merge "$PR" --merge --delete-branch
+
+  # ÉTAPE 4 : RELEASE PROD (Appel CI-CD en mode Prod)
+  release-prod:
+    needs: [check, merge]
+    uses: ./.github/workflows/ci-cd.yaml
+    with:
+      version: ${{ needs.check.outputs.version }}
+      dry_run: false # FALSE = C'est la prod (build latest + release github)
+    secrets: inherit
