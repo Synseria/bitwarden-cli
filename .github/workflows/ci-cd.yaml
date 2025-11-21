@@ -28,11 +28,12 @@ jobs:
 
       - name: Set up QEMU (ARM support)
         uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+          image: tonistiigi/binfmt:latest
         
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          platforms: linux/amd64,linux/arm64 # 🎯 Ajout des plateformes cibles
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -46,7 +47,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # 🚨 Logique de Tag Adaptée au 'workflow_call' (seuls les inputs sont utilisables)
           tags: |
             # Tags DEV (Si Dry Run est vrai)
             type=raw,value=dev,enable=${{ inputs.dry_run }}
