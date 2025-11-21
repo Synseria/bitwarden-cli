@@ -4,11 +4,11 @@ on:
   schedule:
     - cron: '0 6 * * *' # Tous les jours à 6h
   workflow_dispatch:
-      inputs:
-        force_version:
-          description: 'Force le déploiement de cette version (ex: 2025.11.0). Si vide, vérifie Bitwarden.'
-          required: false
-          type: string
+    inputs:
+      force_version:
+        description: 'Force le déploiement de cette version (ex: 2025.11.0). Si vide, vérifie Bitwarden.'
+        required: false
+        type: string
           
 permissions:
   contents: write
@@ -18,11 +18,11 @@ permissions:
 
 jobs:
   # ÉTAPE 1 : DÉTECTION
-check:
+  check:
     runs-on: ubuntu-latest
     outputs:
-      update_needed: ${{ steps.check.outputs.update_needed }}
-      # 🚨 Définition de la version : forcée ou détectée
+      update_needed: ${{ steps.set_version.outputs.update_needed }}
+      # Utilise le 'set_version' pour avoir la version forcée ou détectée
       version: ${{ steps.set_version.outputs.version }} 
     steps:
       - name: Checkout
@@ -31,15 +31,16 @@ check:
       - name: Déterminer la Version à utiliser
         id: set_version
         run: |
-          # Si force_version est donnée, on utilise cette valeur
+          # Logique de déploiement forcé
           if [ "${{ github.event.inputs.force_version }}" != "" ]; then
             FORCED_VERSION="${{ github.event.inputs.force_version }}"
             echo "version=$FORCED_VERSION" >> $GITHUB_OUTPUT
             echo "update_needed=true" >> $GITHUB_OUTPUT
             echo "⚠️ Déploiement Forcé de la version $FORCED_VERSION."
-            exit 0 # Arrête la vérification Bitwarden
-
-          # Sinon, on vérifie l'amont (logique inchangée)
+            exit 0
+          fi
+          
+          # Logique de vérification Bitwarden (si non forcé)
           LATEST=$(curl -s https://api.github.com/repos/bitwarden/clients/releases | jq -r '[.[] | select(.tag_name | startswith("cli-v")) | .tag_name] | first' | sed 's/^cli-v//')
           CURRENT=$(cat VERSION 2>/dev/null || echo "0.0.0")
           
@@ -56,8 +57,7 @@ check:
   test-dev:
     needs: check
     if: needs.check.outputs.update_needed == 'true'
-    # 👇 C'est ici qu'il appelle l'autre fichier
-    uses: ./.github/workflows/ci-cd.yaml
+    uses: ./.github/workflows/ci-cd.yml
     with:
       version: ${{ needs.check.outputs.version }}
       dry_run: true # TRUE = On teste seulement (build docker dev)
@@ -89,14 +89,13 @@ check:
           git push origin "$BRANCH" --force
           
           # On crée la PR et on la valide DANS LA FOULÉE
-          # (On a le droit car on a testé juste avant à l'étape 2)
           PR=$(gh pr create --title "Bump $VERSION" --body "Auto-validated." --base master --head "$BRANCH")
           gh pr merge "$PR" --merge --delete-branch
 
   # ÉTAPE 4 : RELEASE PROD (Appel CI-CD en mode Prod)
   release-prod:
     needs: [check, merge]
-    uses: ./.github/workflows/ci-cd.yaml
+    uses: ./.github/workflows/ci-cd.yml
     with:
       version: ${{ needs.check.outputs.version }}
       dry_run: false # FALSE = C'est la prod (build latest + release github)
