@@ -15,17 +15,11 @@ RUN echo "🔍 Vérification de l'installation..." \
     && bw --version > /dev/null \
     && echo "Bitwarden CLI fonctionne correctement."
 
-# 4. Création utilisateur sécurisé
-RUN adduser -D -u 1000 bwuser
-
-# 5. Gestion du script d'entrée
+# 4. Gestion du script d'entrée
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh \
-    && chown bwuser:bwuser /entrypoint.sh
 
-# 6. Configuration de l'environnement
+# 5. Configuration de l'environnement
 WORKDIR /bw
-RUN chown bwuser:bwuser /bw
 
 # Définition de la variable d'environnement HOME
 ENV HOME=/bw
@@ -33,8 +27,6 @@ ENV BW_HOST="https://api.bitwarden.com"
 ENV TZ="Europe/Paris"
 ENV BW_PORT="8087"
 
-# Passage en utilisateur non-root
-USER bwuser
 
 # Commande d'entrée
 ENTRYPOINT ["/entrypoint.sh"]
