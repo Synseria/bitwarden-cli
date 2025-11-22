@@ -4,6 +4,9 @@ FROM node:24-alpine
 # Déclaration de la version (Obligatoire pour l'utiliser après)
 ARG BW_VERSION
 
+# 1. Installation des dépendances nécessaires
+RUN apk add --no-cache libc6-compat git bash
+
 # 2. Installation de Bitwarden CLI via NPM
 RUN npm install -g @bitwarden/cli@${BW_VERSION}
 
