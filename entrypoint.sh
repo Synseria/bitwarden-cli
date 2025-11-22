@@ -1,85 +1,75 @@
 #!/bin/bash
 set -e
 
-# ==============================================================================
-# 1. VÉRIFICATION DES VARIABLES D'ENVIRONNEMENT
-# ==============================================================================
-
-# Fonction pour vérifier la présence d'une variable
+# Fonction de vérification
 check_required_env() {
-	# Vérifie si la variable est définie et non vide
     local var_name="$1"
-	# Vérification indirecte de la variable
     if [ -z "${!var_name}" ]; then
-		# Message d'erreur
-        echo "Erreur critique : La variable d'environnement '$var_name' est manquante ou vide."
-
-		# Sortie avec code d'erreur
+        echo "❌ Erreur : Variable '$var_name' manquante."
         exit 1
     fi
 }
 
-# Log
-echo "Vérification de la configuration..."
-
-# Liste des variables obligatoires
+echo "🔍 Vérification de la configuration..."
 check_required_env "BW_HOST"
 check_required_env "BW_CLIENTID"
 check_required_env "BW_CLIENTSECRET"
 check_required_env "BW_PASSWORD"
 
-# Log
-echo "Configuration validée."
+# ==============================================================================
+# 1. CONFIGURATION SILENCIEUSE (La modification est ICI)
+# ==============================================================================
+# Au lieu de lancer 'bw config server' qui tente de joindre le cloud,
+# on injecte directement la configuration dans le fichier JSON.
+
+CONFIG_DIR="$HOME/.config/Bitwarden CLI"
+mkdir -p "$CONFIG_DIR"
+
+# On écrit directement la config pour forcer l'URL locale dès le départ
+cat > "$CONFIG_DIR/data.json" <<EOF
+{
+  "environmentUrls": {
+    "base": "${BW_HOST}",
+    "api": null,
+    "identity": null,
+    "web": null,
+    "icons": null,
+    "notifications": null,
+    "events": null
+  }
+}
+EOF
+
+echo "🌐 Configuration serveur forcée sur : ${BW_HOST}"
 
 # ==============================================================================
-# 2. CONFIGURATION ET CONNEXION
+# 2. CONNEXION
 # ==============================================================================
 
-# Configuration du serveur
-echo "Configuration du serveur : ${BW_HOST}"
+echo "🔑 Authentification..."
+# On redirige les erreurs potentielles de connexion non critiques
+if ! bw login --apikey > /dev/null 2>&1; then
+    echo "❌ Échec de l'authentification API. Vérifiez vos identifiants ou l'URL."
+    # On affiche l'erreur réelle maintenant si ça a échoué
+    bw login --apikey
+    exit 1
+fi
+echo "✅ Authentifié."
 
-# Application de la configuration
-bw config server "${BW_HOST}"
+echo "🔓 Déverrouillage du coffre..."
+# On capture la session. Si ça échoue, BW_SESSION sera vide ou contiendra une erreur
+export BW_SESSION=$(bw unlock --passwordenv BW_PASSWORD --raw 2>/dev/null)
 
-# Log
-echo "Authentification via API Key..."
-
-# Connexion via API Key
-bw login --apikey
-
-# Log
-echo "Déverrouillage du coffre..."
-
-# Déverrouillage du coffre
-export BW_SESSION=$(bw unlock --passwordenv BW_PASSWORD --raw)
-
-# Vérification de la session
 if [ -z "$BW_SESSION" ]; then
-	# Log
-    echo "❌ Erreur : Impossible de récupérer la session (Mot de passe incorrect ?)"
-
-	# Sortie avec code d'erreur
+    echo "❌ Erreur : Impossible de déverrouiller le coffre (Mot de passe maître incorrect ?)"
     exit 1
 fi
 
-# Vérification finale
-if bw unlock --check > /dev/null 2>&1; then
-	# Log
-    echo "Coffre déverrouillé avec succès."
-else
-	# Log
-    echo "Erreur : Le coffre semble toujours verrouillé."
-
-	# Sortie avec code d'erreur
-    exit 1
-fi
+echo "✅ Coffre déverrouillé."
 
 # ==============================================================================
-# 3. LANCEMENT DU SERVEUR
+# 3. LANCEMENT
 # ==============================================================================
 
-# Log
-echo "Lancement du serveur Bitwarden CLI sur le port ${BW_PORT:-8087}"
-
-# Exécution du serveur
+echo "🚀 Lancement du serveur sur le port ${BW_PORT:-8087}"
 exec bw serve --hostname 0.0.0.0 --port ${BW_PORT:-8087}

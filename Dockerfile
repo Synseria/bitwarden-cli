@@ -12,7 +12,7 @@ RUN apk add --no-cache libc6-compat git bash sed
 RUN npm install -g @bitwarden/cli@${BW_VERSION}
 
 # 3. VÉRIFICATION DE L'INSTALLATION
-RUN echo "🔍 Vérification de l'installation..." \
+RUN echo "Vérification de l'installation..." \
     && bw --version > /dev/null \
     && echo "Bitwarden CLI fonctionne correctement."
 
